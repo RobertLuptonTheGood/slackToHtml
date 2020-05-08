@@ -5,6 +5,7 @@ import html
 import json
 import os
 import re
+import textwrap
 
 class User:
     def __init__(self, userId, userDict):
@@ -18,7 +19,7 @@ class User:
         self.image_url = userDict.get('image_72')  # URL to look up avatar image
 
     def __str__(self):
-        return self.name
+        return self.name if self.name else ""
 
 
 class Msg:
@@ -35,24 +36,43 @@ class Msg:
             
         if msgDict['type'] == 'message' and msgDict.get('subtype') == "bot_message":
             self.user = User(msgDict['bot_id'],
-                                 dict(display_name=msgDict.get('username', "???")))
+                             dict(display_name=msgDict.get('username', "???")))
+        elif msgDict['type'] == 'message' and msgDict.get('subtype') == "channel_join":
+            self.user = User('channel_join',
+                             dict(display_name=msgDict.get('user_name', None)))
         else:
             self.user = User(msgDict['user'],
-                                 msgDict.get('user_profile', dict(display_name="???")))
+                             msgDict.get('user_profile', dict(display_name="???")))
 
         if 'blocks' in msgDict:
-            self.payload = msgDict['blocks']
+            self.blocks = msgDict['blocks']
         else:
-            self.payload = [dict(elements=[dict(elements=[dict(type='text',
-                                                               subtype=msgDict.get('subtype'),
+            self.blocks = [dict(elements=[dict(elements=[dict(type='text',
                                                                text=msgDict['text'])])])]
+        self.files = msgDict.get('files', [])
             
     def __repr__(self):
-        return str(self.payload)
+        return str(self.blocks)
+
+    @staticmethod
+    def get_text(el):
+        text = el['text']
+
+        if el.get('style', {}).get('code'):
+            text = f"<code>{html.escape(text)}</code>"
+        else:
+            mat = re.search(r"<@([^>]+)>", text)
+            if mat:
+                text = re.sub(r"<@([^>]+)>", str(users[mat.group(1)]), text)
+
+            text = html.escape(text)
+            text = text.replace('\n', '<BR>')
+
+        return text
 
     def getOutput(self, width=100):
         output = []
-        for block in self.payload:
+        for block in self.blocks:
             for el in block['elements']:
                 preformatted = False
                 if el.get('type') == 'rich_text_preformatted':
@@ -60,30 +80,19 @@ class Msg:
                     width = None  # disable wrapping
 
                     output.append("<PRE>")
+                elif el.get('type') == 'rich_text_list':
+                    pass
+                else:
+                    if el.get('type') not in [None, 'rich_text_section']:
+                        print(el['type'])
+                        import pdb; pdb.set_trace() 
 
                 for el2 in el['elements']:
                     if el2['type'] == 'text':
-                        text = el2['text']
-
-                        if el2.get('style', {}).get('code'):
-                            text = f"<code>{html.escape(text)}</code>"
-                        elif el2.get('subtype') == 'channel_join':
-                            mat = re.search(r"<@([^>]+)>", text)
-                            if mat:
-                                text = re.sub(r"<@([^>]+)>", str(users[mat.group(1)]), text)
-                        else:
-                            text = html.escape(text)
-
-                        output.append(text)
+                        output.append(self.get_text(el2))
                     elif el2['type'] == 'rich_text_section':
                         for el3 in el2['elements']:
-                            text = el3['text']
-                            if el3.get('style', {}).get('code'):
-                                text = f"<code>{html.escape(text)}</code>"
-                            else:
-                                text = html.escape(text)
-
-                            output.append(text)
+                            output.append(self.get_text(el3))
 
                         output.append("</PRE>")
                     elif el2['type'] == 'channel':
@@ -107,10 +116,23 @@ class Msg:
                 if preformatted: 
                     output.append("<PRE>")
                         
-        import textwrap
-        if width:
+        if width and False:
             output = textwrap.wrap(" ".join(output), width)
 
+        if self.files:
+            output.append("<UL style='list-style: none;'>")
+            for f in self.files:
+                thumb = "thumb_360"
+
+                if thumb in f:
+                    nameStr = f"<IMG SRC='{f['thumb_360']}'></IMG>"
+                else:
+                    nameStr = f['name']
+
+                output.append(f"<LI><A HREF='{f['url_private_download']}'>{nameStr}</A></LI>")
+
+            output.append("</UL>")
+                
         return output
 
     def __str__(self):
@@ -124,7 +146,8 @@ def format_msg(msg, indent=""):
     output.append("<DT>")
 
     timeStr = msg.date.strftime('%a %Y-%m-%d %I:%M%p')
-    output.append(f"<img width=16 height=16 src={msg.user.image_url}></img>  {str(msg.user):25s}  {timeStr}")
+    img = f"<img width=16 height=16 src={msg.user.image_url}></img>" if msg.user.name else ""
+    output.append(f"{img}  {str(msg.user):25s}  {timeStr}")
 
     output.append("</DT><DD>")
 
