@@ -43,7 +43,9 @@ class Msg:
         if 'blocks' in msgDict:
             self.payload = msgDict['blocks']
         else:
-            self.payload = [dict(elements=[dict(elements=[dict(type='text', text=msgDict['text'])])])]
+            self.payload = [dict(elements=[dict(elements=[dict(type='text',
+                                                               subtype=msgDict.get('subtype'),
+                                                               text=msgDict['text'])])])]
             
     def __repr__(self):
         return str(self.payload)
@@ -63,8 +65,12 @@ class Msg:
                     if el2['type'] == 'text':
                         text = el2['text']
 
-                        if el2.get('style') and el2.get('style').get('code'):
+                        if el2.get('style', {}).get('code'):
                             text = f"<code>{html.escape(text)}</code>"
+                        elif el2.get('subtype') == 'channel_join':
+                            mat = re.search(r"<@([^>]+)>", text)
+                            if mat:
+                                text = re.sub(r"<@([^>]+)>", str(users[mat.group(1)]), text)
                         else:
                             text = html.escape(text)
 
@@ -72,7 +78,7 @@ class Msg:
                     elif el2['type'] == 'rich_text_section':
                         for el3 in el2['elements']:
                             text = el3['text']
-                            if el3.get('style') and el3.get('style').get('code'):
+                            if el3.get('style', {}).get('code'):
                                 text = f"<code>{html.escape(text)}</code>"
                             else:
                                 text = html.escape(text)
@@ -118,7 +124,7 @@ def format_msg(msg, indent=""):
     output.append("<DT>")
 
     timeStr = msg.date.strftime('%a %Y-%m-%d %I:%M%p')
-    output.append(f"<img width=16 height=16 src={msg.user.image_url}></img>  {msg.user.name:25s}  {timeStr}")
+    output.append(f"<img width=16 height=16 src={msg.user.image_url}></img>  {str(msg.user):25s}  {timeStr}")
 
     output.append("</DT><DD>")
 
@@ -128,7 +134,8 @@ def format_msg(msg, indent=""):
                    ('…', '...'),
                    ('“', '"'),
                    ('”', '"'),
-                   (' ', ' '),
+                   (' ', '_'),
+                   ('—', '-'),
     ]:
         outputStr = outputStr.replace(ci, co)
 
@@ -138,8 +145,11 @@ def format_msg(msg, indent=""):
 
     return indent + f"\n{indent}".join(output)
 
-def formatSlackArchive(rootDir, outputDir=None, projectName="PFS"):
+def formatSlackArchive(rootDir, channelList=None, outputDir=None, projectName="PFS"):
     """Format a slack archive to be human readable
+
+    If channelList is not None, it's a list of channels to process (otherwise
+    we process all of them)
 
     The layout is expected to be like:
        rootdir/channel1/date1.json
@@ -190,6 +200,10 @@ def formatSlackArchive(rootDir, outputDir=None, projectName="PFS"):
             continue
 
         channelName = os.path.split(channel)[-1]
+
+        if channelList is not None and channelName not in channelList:
+            continue
+
         msgs[channelName] = []
         threads[channelName] = {}
 
@@ -215,7 +229,7 @@ def formatSlackArchive(rootDir, outputDir=None, projectName="PFS"):
 
         dates = [os.path.splitext(os.path.split(f)[1])[0] for f in inputFiles[channel]]
         title = f"{projectName} slack archives {channel} {dates[0]}---{dates[-1]}"
-        with open(os.path.join(outputDir, f"{channel}.'html'"), "w") as fd:
+        with open(os.path.join(outputDir, f"{channel}.html"), "w") as fd:
             print(f"""
     <HTML>
     <HEAD>
@@ -263,8 +277,10 @@ if __name__ == "__main__":
 
     parser.add_argument('rootDir', type=str, help="Directory containing directories with json")
     parser.add_argument('--outputDir', '-o', help="Directory to write files; default <rootDir>")
+    parser.add_argument('--channels', '-c', nargs="+", help="Only process these channels")
     parser.add_argument('--project', '-p', help="Name of project; default PFS", default="PFS")
 
     args = parser.parse_args()
 
-    formatSlackArchive(args.rootDir, args.outputDir, projectName=args.project)
+    formatSlackArchive(args.rootDir, channelList=args.channels,
+                       outputDir=args.outputDir, projectName=args.project)
