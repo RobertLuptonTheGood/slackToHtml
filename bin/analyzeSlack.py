@@ -48,7 +48,7 @@ class Msg:
     def __repr__(self):
         return str(self.payload)
 
-    def getOutput(self, width=100, writeHtml=True):
+    def getOutput(self, width=100):
         output = []
         for block in self.payload:
             for el in block['elements']:
@@ -57,18 +57,15 @@ class Msg:
                     preformatted = True
                     width = None  # disable wrapping
 
-                    if writeHtml:                        
-                        output.append("<PRE>")
+                    output.append("<PRE>")
 
                 for el2 in el['elements']:
                     if el2['type'] == 'text':
                         text = el2['text']
 
                         if el2.get('style') and el2.get('style').get('code'):
-                            text = text.replace('&', '\177')
-                            text = f"<code>{html.escape(text)}</code>" if writeHtml else f"`{text}`"
-                            text = text.replace('\177', '&')
-                        elif writeHtml:
+                            text = f"<code>{html.escape(text)}</code>"
+                        else:
                             text = html.escape(text)
 
                         output.append(text)
@@ -76,19 +73,13 @@ class Msg:
                         for el3 in el2['elements']:
                             text = el3['text']
                             if el3.get('style') and el3.get('style').get('code'):
-                                if '&' in text:
-                                    raise RuntimeError('XX')
-
-                                text = text.replace('&', '\177')
-                                text = f"<code>{html.escape(text)}</code>" if writeHtml else f"`{text}`"
-                                text = text.replace('\177', '&')
-                            elif writeHtml:
+                                text = f"<code>{html.escape(text)}</code>"
+                            else:
                                 text = html.escape(text)
 
                             output.append(text)
 
-                        if writeHtml:
-                            output.append("</PRE>")
+                        output.append("</PRE>")
                     elif el2['type'] == 'channel':
                         channel = f"#{channels[el2['channel_id']]}"
                         output.append(channel)
@@ -97,7 +88,7 @@ class Msg:
                         output.append(emoji)
                     elif el2['type'] == 'link':
                         url = el2['url']
-                        link = f"<a href='{url}'>{url}</a>" if writeHtml else f"<{url}>"
+                        link = f"<a href='{url}'>{url}</a>"
                         output.append(link)
                     elif el2['type'] == 'user':   # e.g. {'type': 'user', 'user_id': 'UA82J1WP3'}
                         user = users.get(el2['user_id'], el2['user_id'])
@@ -107,7 +98,7 @@ class Msg:
                     else:
                         raise RuntimeError(f"Complain to RHL: {el2}")
 
-                if preformatted and writeHtml: 
+                if preformatted: 
                     output.append("<PRE>")
                         
         import textwrap
@@ -119,45 +110,35 @@ class Msg:
     def __str__(self):
         return "\n".join(self.getOutput())
 
-def format_msg(msg, indent="", writeHtml=True):
+def format_msg(msg, indent=""):
     """Format a single message, possibly with an indent at the start of each line"""
     
     output = []
-    if writeHtml:
-        indent = ""
-        output.append("<DT>")
+    indent = ""
+    output.append("<DT>")
 
     timeStr = msg.date.strftime('%a %Y-%m-%d %I:%M%p')
-    if writeHtml:
-        output.append(f"<img width=16 height=16 src={msg.user.image_url}></img>  {msg.user.name:25s}  {timeStr}")
-    else:
-        output.append(f"From: {msg.user.name:25s}  {timeStr}")
+    output.append(f"<img width=16 height=16 src={msg.user.image_url}></img>  {msg.user.name:25s}  {timeStr}")
 
-    if writeHtml:
-        output.append("</DT>")
-        output.append("<DD>")
+    output.append("</DT><DD>")
 
-    outputStr = "\n".join(msg.getOutput(writeHtml=writeHtml))
-    if writeHtml:
-        for ci, co in [('’', "'"), 
-                       ('…', '...'),
-                       ('…', '...'),
-                       ('“', '"'),
-                       ('”', '"'),
-                       (' ', ' '),
-                      ]:
-            outputStr = outputStr.replace(ci, co)
+    outputStr = "\n".join(msg.getOutput())
+    for ci, co in [('’', "'"), 
+                   ('…', '...'),
+                   ('…', '...'),
+                   ('“', '"'),
+                   ('”', '"'),
+                   (' ', ' '),
+    ]:
+        outputStr = outputStr.replace(ci, co)
 
     output.append(outputStr)
     
-    if writeHtml:
-        output.append("</DD>")
-    else:
-        output.append(f"------------------")
+    output.append("</DD>")
 
     return indent + f"\n{indent}".join(output)
 
-def formatSlackArchive(rootDir, outputDir=None, writeHtml=True, projectName="PFS"):
+def formatSlackArchive(rootDir, outputDir=None, projectName="PFS"):
     """Format a slack archive to be human readable
 
     The layout is expected to be like:
@@ -171,8 +152,6 @@ def formatSlackArchive(rootDir, outputDir=None, writeHtml=True, projectName="PFS
         outputDir/channel1.html
                   channel2.html
                   ...
-
-    (or .txt if writeHtml is False)
     """
 
     if outputDir == None:
@@ -236,9 +215,8 @@ def formatSlackArchive(rootDir, outputDir=None, writeHtml=True, projectName="PFS
 
         dates = [os.path.splitext(os.path.split(f)[1])[0] for f in inputFiles[channel]]
         title = f"{projectName} slack archives {channel} {dates[0]}---{dates[-1]}"
-        with open(os.path.join(outputDir, f"{channel}.{'html' if writeHtml else 'txt'}"), "w") as fd:
-            if writeHtml:
-                print(f"""
+        with open(os.path.join(outputDir, f"{channel}.'html'"), "w") as fd:
+            print(f"""
     <HTML>
     <HEAD>
       <TITLE>{title}</TITLE>
@@ -255,24 +233,23 @@ def formatSlackArchive(rootDir, outputDir=None, writeHtml=True, projectName="PFS
                     if msg != msgs_thread[0]:
                         continue   # already processed
 
-                    print(format_msg(msg, writeHtml=writeHtml), file=fd)
+                    print(format_msg(msg), file=fd)
 
-                    if writeHtml and len(msgs_thread) > 1:
+                    if len(msgs_thread) > 1:
                         print("<DT></DT><DD><DL>", file=fd)
 
                     for m in msgs_thread[1:]:
-                        print(format_msg(m, "|\t", writeHtml=writeHtml), file=fd)
+                        print(format_msg(m, "|\t"), file=fd)
 
-                    if writeHtml and len(msgs_thread) > 1:
+                    if len(msgs_thread) > 1:
                         print("</DD></DL>", file=fd)
 
                 else:
-                    print(format_msg(msg, writeHtml=writeHtml), file=fd)
+                    print(format_msg(msg), file=fd)
 
                 print('', file=fd)
 
-            if writeHtml:
-                print(f"""
+            print(f"""
     </DL>
     </BODY>
     </HTML>""", file=fd)
@@ -287,8 +264,7 @@ if __name__ == "__main__":
     parser.add_argument('rootDir', type=str, help="Directory containing directories with json")
     parser.add_argument('--outputDir', '-o', help="Directory to write files; default <rootDir>")
     parser.add_argument('--project', '-p', help="Name of project; default PFS", default="PFS")
-    parser.add_argument('--text', action="store_true", help="Dump data as text files?", default=False)
 
     args = parser.parse_args()
 
-    formatSlackArchive(args.rootDir, args.outputDir, writeHtml=not args.text, projectName=args.project)
+    formatSlackArchive(args.rootDir, args.outputDir, projectName=args.project)
