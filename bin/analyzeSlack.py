@@ -12,7 +12,7 @@ class User:
         self._dict = userDict
 
         self.userId = userId
-        self.name = userDict['display_name']
+        self.name = userDict.get('display_name', "")
         if self.name == "":
             self.name = userDict['real_name']
 
@@ -33,16 +33,16 @@ class Msg:
 
         if msgDict['type'] not in ["message"]:
             print(msg); raise RuntimeError("")
-            
+
+        global users
         if msgDict['type'] == 'message' and msgDict.get('subtype') == "bot_message":
-            self.user = User(msgDict['bot_id'],
+            self.user = User(msgDict.get('bot_id', "BID"),
                              dict(display_name=msgDict.get('username', "???")))
         elif msgDict['type'] == 'message' and msgDict.get('subtype') == "channel_join":
             self.user = User('channel_join',
                              dict(display_name=msgDict.get('user_name', None)))
         else:
-            self.user = User(msgDict['user'],
-                             msgDict.get('user_profile', dict(display_name="???")))
+            self.user = users[msgDict['user']]
 
         if 'blocks' in msgDict:
             self.blocks = msgDict['blocks']
@@ -61,9 +61,14 @@ class Msg:
         if el.get('style', {}).get('code'):
             text = f"<code>{html.escape(text)}</code>"
         else:
-            mat = re.search(r"<@([^>]+)>", text)
-            if mat:
-                text = re.sub(r"<@([^>]+)>", str(users[mat.group(1)]), text)
+            while True:
+                mat = re.search(r"<@([^>]+)>", text)
+                if not mat:
+                    break
+
+                rawUserId = mat.group(1)
+                userId = re.sub(r"\|.*$", "", rawUserId) # userId can be e.g. @U3A2P4FEH|cloomis
+                text = re.sub(f"<@{rawUserId}>", f"@{users[userId]}", text)
 
             text = html.escape(text)
             text = text.replace('\n', '<BR>')
@@ -123,6 +128,10 @@ class Msg:
             output.append("<UL style='list-style: none;'>")
             for f in self.files:
                 thumb = "thumb_360"
+
+                if f.get('mode') == "tombstone":
+                    output.append("(This file was deleted)")
+                    continue
 
                 if thumb in f:
                     nameStr = f"<IMG SRC='{f['thumb_360']}'></IMG>"
@@ -236,6 +245,9 @@ def formatSlackArchive(rootDir, channelList=None, outputDir=None, projectName="P
                 data = json.load(fd)
 
             for msg in data:
+                if msg.get('subtype') in ["file_comment"]:
+                    continue
+
                 msg = Msg(msg)
                 msgs[channelName].append(msg)
 
