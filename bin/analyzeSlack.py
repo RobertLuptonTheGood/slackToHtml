@@ -5,6 +5,7 @@ import html
 import json
 import os
 import re
+import sys
 import textwrap
 
 class User:
@@ -23,8 +24,8 @@ class User:
 
 
 class Msg:
-    def __init__(self, msgDict):
-        msg = None; del msg
+    def __init__(self, fileName, msgDict):
+        self.fileName = fileName
         self._dict = msgDict
 
         self.ts = msgDict['ts']
@@ -161,15 +162,56 @@ def format_msg(msg, indent=""):
     output.append("</DT><DD>")
 
     outputStr = "\n".join(msg.getOutput())
-    for ci, co in [('’', "'"), 
-                   ('…', '...'),
-                   ('…', '...'),
-                   ('“', '"'),
-                   ('”', '"'),
-                   (' ', '_'),
-                   ('—', '-'),
-    ]:
-        outputStr = outputStr.replace(ci, co)
+
+    try:
+        msg.fileName.encode('ascii')
+    except UnicodeEncodeError:
+        pass                            # don't bother to fix Japanese text!
+    else:
+        for ci, co in [('’', "'"), 
+                       ('…', '...'),
+                       ('…', '...'),
+                       ('“', '"'),
+                       ('”', '"'),
+                       (' ', '_'),
+                       ('—', '-'),
+                       ('\U0010fc0e', '?'), # '?' in a square
+                       ('？', '?'),
+                       ('±', '&plusmn;'),
+                       ('²', '&sup2;'),
+                       ('µ', '&mu;'),
+                       ('Å', '&Aring;'),
+                       ('à', '&agrave;'),
+                       ('á', '&aacute;'),
+                       ('é', '&eacute;'),
+                       ('ó', '&oacute;'),
+                       ('û', '&ucirc;'),
+                       ('λ', '&lambda;'),
+                       ('σ', '&sigma;'),
+                       ('•', '&bull;'),
+                       ('􏰎', ' '),
+                       ('°', '&deg'),
+                       ('ï', '&iuml;'),  # really i dieresis
+                       ('ô', '&ocirc;'),
+                       ('γ', '&upsilon;'),
+                       ('–', '-'),
+                       ('‘', "'"),
+                       ('↑', '&uarr;'),
+                       
+        ]:
+            outputStr = outputStr.replace(ci, co)
+
+        try:
+            outputStr.encode('ascii')
+        except UnicodeEncodeError as e:
+            if re.search("[\u3040-\u30ff\u4e00-\u9FFF]", outputStr):
+                if False:
+                    print(f"In {msg.fileName} Japanese character: {outputStr[e.start:e.end]}", file=sys.stderr)
+            else:
+                #print(f"In {msg.fileName} non-ascii character: {outputStr[e.start:e.end]}", file=sys.stderr)
+                print(f"non-ascii character: {outputStr[e.start:e.end]}", file=sys.stderr)
+                #import pdb; pdb.set_trace()
+                pass
 
     output.append(outputStr)
     
@@ -248,7 +290,7 @@ def formatSlackArchive(rootDir, channelList=None, outputDir=None, projectName="P
                 if msg.get('subtype') in ["file_comment"]:
                     continue
 
-                msg = Msg(msg)
+                msg = Msg(fileName, msg)
                 msgs[channelName].append(msg)
 
                 if msg.thread_ts:
